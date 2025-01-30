@@ -184,6 +184,8 @@ FLEXDLL_FULL_VERSION = \
   $(subst $(SPACE),.,$(wordlist 1, 4, $(subst .,$(SPACE),$(VERSION)) 0 0 0))
 FLEXDLL_VS_VERSION_INFO = $(subst .,$(COMMA),$(FLEXDLL_FULL_VERSION))
 
+RC ?= rc
+
 RC_FLAGS = \
   /d FLEXDLL_VS_VERSION_INFO=$(FLEXDLL_VS_VERSION_INFO) \
   /d FLEXDLL_FULL_VERSION="$(FLEXDLL_FULL_VERSION)"
@@ -194,7 +196,7 @@ WINDRES_FLAGS = \
   -D FLEXDLL_FULL_VERSION=\\\"$(FLEXDLL_FULL_VERSION)\\\"
 
 version.res: version.rc flexdll.opam
-	$(RES_PREFIX) rc /nologo $(RC_FLAGS) $<
+	$(RES_PREFIX) $(RC) /nologo $(RC_FLAGS) $<
 
 version_res.o: version.rc flexdll.opam
 	$(TOOLPREF)windres $(WINDRES_FLAGS) -i $< -o $@
