@@ -211,7 +211,7 @@ let run_command cmdline cmd =
   in
   (* note: for Cygwin, using bash allow to follow symlinks to find
      gcc... *)
-  if !toolchain = `CYGWIN64 ||
+  if not Sys.win32 || !toolchain = `CYGWIN64 ||
      String.length cmd + String.length silencer > max_command_length
   then begin
     (* Dump the command in a text file and apply bash to it. *)
@@ -1122,7 +1122,10 @@ let build_dll link_exe output_file files exts extra_args =
         let extra_args =
           (* FlexDLL doesn't process .voltbl sections correctly, so don't allow the linker
              to process them. *)
-          if Sys.command "link | findstr EMITVOLATILEMETADATA > nul" = 0 then
+          let command =
+            if Sys.win32 then "link | findstr EMITVOLATILEMETADATA > nul"
+            else "link /help | grep -iq emitvolatilemetadata >/dev/null" in
+          if Sys.command command = 0 then
             "/EMITVOLATILEMETADATA:NO " ^ extra_args
           else extra_args
         in
