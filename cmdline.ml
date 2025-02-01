@@ -21,6 +21,7 @@ let subsystem = ref "console"
 let explain = ref false
 let builtin_linker = ref false
 let toolchain : [ `MSVC | `MSVC64 | `MINGW | `MINGW64 | `GNAT | `GNAT64 | `CYGWIN64 | `LIGHTLD ] ref = ref `MSVC
+let use_ld = ref None
 let save_temps = ref false
 let show_exports = ref false
 let show_imports = ref false
@@ -115,6 +116,9 @@ let specs = [
                           | "ld" -> `LIGHTLD
 			  | _ -> assert false)),
   " Choose which linker to use";
+
+  "-use-ld", Arg.String (fun s -> use_ld := Some s),
+  " Chose an alternative linker to use (\"bfd\", \"gold\", \"lld\", \"mold\", \"link\", \"lld-link\")";
 
   "-x64", Arg.Unit (fun () -> machine := `x64; underscore := false; toolchain := `MSVC64),
   " (Deprecated)";
