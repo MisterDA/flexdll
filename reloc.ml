@@ -197,7 +197,7 @@ type cmdline = {
   }
 
 let new_cmdline () =
-  let rf = match !toolchain with
+  let rf = not Sys.win32 && match !toolchain with
   | `MSVC | `MSVC64 | `LIGHTLD -> true
   | `MINGW | `MINGW64 | `GNAT | `GNAT64 | `CYGWIN64 -> false
   in
