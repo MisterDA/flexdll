@@ -197,7 +197,7 @@ type cmdline = {
   }
 
 let new_cmdline () =
-  let rf = match !toolchain with
+  let rf = not Sys.win32 && match !toolchain with
   | `MSVC | `MSVC64 | `LIGHTLD -> true
   | `MINGW | `MINGW64 | `GNAT | `GNAT64 | `CYGWIN64 -> false
   in
@@ -211,7 +211,7 @@ let run_command cmdline cmd =
   in
   (* note: for Cygwin, using bash allow to follow symlinks to find
      gcc... *)
-  if !toolchain = `CYGWIN64 ||
+  if not Sys.win32 || !toolchain = `CYGWIN64 ||
      String.length cmd + String.length silencer > max_command_length
   then begin
     (* Dump the command in a text file and apply bash to it. *)
@@ -1096,6 +1096,8 @@ let build_dll link_exe output_file files exts extra_args =
 
   let cmd = match !toolchain with
     | `MSVC | `MSVC64 ->
+        let link = Option.value !Cmdline.use_ld ~default:"link" in
+
         (* Putting the file the descriptor object at the beginning
            with MSVC compilers seems to break Stack overflow recovery
            in OCaml. No idea why. *)
@@ -1122,7 +1124,10 @@ let build_dll link_exe output_file files exts extra_args =
         let extra_args =
           (* FlexDLL doesn't process .voltbl sections correctly, so don't allow the linker
              to process them. *)
-          if Sys.command "link | findstr EMITVOLATILEMETADATA > nul" = 0 then
+          let command =
+            if Sys.win32 then link ^ " | findstr EMITVOLATILEMETADATA > nul"
+            else link ^ " /help | grep -iq emitvolatilemetadata >/dev/null" in
+          if Sys.command command = 0 then
             "/EMITVOLATILEMETADATA:NO " ^ extra_args
           else extra_args
         in
@@ -1134,7 +1139,8 @@ let build_dll link_exe output_file files exts extra_args =
            with the Windows 7 SDK in 64-bit mode. *)
 
         Printf.sprintf
-          "link /nologo %s%s%s%s%s /implib:%s /out:%s /subsystem:%s %s %s %s"
+          "%s /nologo %s%s%s%s%s /implib:%s /out:%s /subsystem:%s %s %s %s"
+          link
           (if !verbose >= 2 then "/verbose " else "")
           (if link_exe = `EXE then "" else "/dll ")
           (if main_pgm then "" else "/export:symtbl /export:reloctbl ")
@@ -1162,8 +1168,9 @@ let build_dll link_exe output_file files exts extra_args =
             Filename.quote def_file
         in
         Printf.sprintf
-          "%s %s%s -L. %s %s -o %s %s %s %s %s"
+          "%s %s%s%s -L. %s %s -o %s %s %s %s %s"
           !gcc
+          (Option.fold ~none:"" ~some:(fun ld -> "-fuse-ld=" ^ ld ^ " ") !Cmdline.use_ld)
           (if link_exe = `EXE then "" else "-shared ")
           (if main_pgm then "" else if !noentry then "-Wl,-e0 " else if !machine = `x86 then "-Wl,-e_FlexDLLiniter@12 " else "-Wl,-eFlexDLLiniter ")
           (mk_dirs_opt "-I")
@@ -1183,9 +1190,10 @@ let build_dll link_exe output_file files exts extra_args =
             Filename.quote def_file
         in
         Printf.sprintf
-          "%s -m%s %s%s -L. %s %s -o %s %s %s %s %s %s"
+          "%s -m%s %s%s%s -L. %s %s -o %s %s %s %s %s %s"
           !gcc
           !subsystem
+          (Option.fold ~none:"" ~some:(fun ld -> "-fuse-ld=" ^ ld ^ " ") !Cmdline.use_ld)
           (if link_exe = `EXE then "" else "-shared ")
           (if main_pgm then "" else if !noentry then "-Wl,-e0 " else if !machine = `x86 then "-Wl,-e_FlexDLLiniter@12 " else "-Wl,-eFlexDLLiniter ")
           (mk_dirs_opt "-I")
@@ -1198,8 +1206,10 @@ let build_dll link_exe output_file files exts extra_args =
           extra_args
     | `LIGHTLD ->
         no_merge_manifest := true;
+        let ld = Option.value !Cmdline.use_ld ~default:"ld" in
         Printf.sprintf
-          "ld %s%s -o %s %s %s %s %s"
+          "%s %s%s -o %s %s %s %s %s"
+          ld
           (if link_exe = `EXE then "" else "--shared ")
           (if main_pgm then "" else if !noentry then "-e0 " else "-e FlexDLLiniter@12 ")
           (Filename.quote output_file)
@@ -1227,7 +1237,9 @@ let build_dll link_exe output_file files exts extra_args =
           Filename.concat flexdir default_manifest
       in
       let mcmd =
-        Printf.sprintf "mt -nologo -outputresource:%s -manifest %s"
+        let mt = Option.value !Cmdline.use_mt ~default:"mt" in
+        Printf.sprintf "%s -nologo -outputresource:%s -manifest %s"
+          mt
           (Filename.quote (if link_exe = `EXE then output_file
                            else output_file ^ ";#2"))
           (Filename.quote fn)
