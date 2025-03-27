@@ -10,6 +10,12 @@
    line ceases to be necessary. A function introduced in OCaml 4.01, therefore,
    is prefixed with "401:" *)
 
+410:module Filename = struct
+410:  include Filename
+410:
+410:  let null = if Sys.win32 then "NUL" else "/dev/null"
+410:end
+
 405:module Arg = struct
 405:  include Arg
 405:
