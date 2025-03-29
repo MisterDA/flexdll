@@ -169,7 +169,10 @@ COMPAT_LEVEL := \
           $(if $(call test_ver,40700),407) \
           $(if $(call test_ver,40800),408) \
           $(if $(call test_ver,40900),409) \
-          $(if $(call test_ver,41000),410))
+          $(if $(call test_ver,41000),410) \
+          $(if $(call test_ver,41100),411) \
+          $(if $(call test_ver,41200),412) \
+          $(if $(call test_ver,41300),413))
 
 Compat.ml: Compat.ml.in COMPILER-$(COMPAT_VERSION)
 	sed -E -e '$(if $(COMPAT_LEVEL),/^$(subst $(SPACE),:|^,$(COMPAT_LEVEL)):/d;)s/^[0-9]*://' $< > $@

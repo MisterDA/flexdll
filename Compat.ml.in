@@ -106,8 +106,8 @@
 
 407:module Stdlib = Pervasives
 
-404:module String = struct
-404:  include String
+413:module String = struct
+413:  include String
 402:
 402:  let init n f =
 402:    let s = create n in
@@ -131,7 +131,16 @@
 404:      end
 404:    done;
 404:    sub s 0 !j :: !r
-404:end
+413:
+413:  let starts_with ~prefix s =
+413:    let len_s = length s
+413:    and len_pre = length prefix in
+413:    let rec aux i =
+413:      if i = len_pre then true
+413:      else if unsafe_get s i <> unsafe_get prefix i then false
+413:      else aux (i + 1)
+413:    in len_s >= len_pre && aux 0
+413:end
 
 401:module Sys = struct
 401:  include Sys
