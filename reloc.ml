@@ -1272,22 +1272,10 @@ let read_gnatls () =
      List.hd (List.filter (fun s -> ends_with s "adainclude") str_l) in
    Filename.dirname (strip ada_include)
 
-let split str sep =
+let split sep str =
   let p = String.index str sep in
   let slen = String.length str in
   String.sub str 0 p, String.sub str (p + 1) (slen - p - 1)
-
-let nsplit str sep =
-  if str = "" then []
-  else
-    let rec loop acc pos =
-      if pos > String.length str then
-        List.rev acc
-      else
-        let i = try String.index_from str pos sep with Not_found -> String.length str in
-        loop (String.sub str pos (i - pos) :: acc) (i + 1)
-    in
-    loop [] 0
 
 let normalize_path path =
   let path =
@@ -1297,7 +1285,7 @@ let normalize_path path =
     else
       path
   in
-  let path = nsplit path '/' in
+  let path = String.split_on_char '/' path in
   let rec loop acc path =
     match path with
     | "."  :: path -> loop acc path
@@ -1342,7 +1330,7 @@ let setup_toolchain () =
                             |> Filename.dirname in
               Some install, libraries
             else try
-                match split entry '=' with
+                match split '=' entry with
                 | "libraries: ", libraries -> install, libraries
                 | _ -> install, libraries
               with Not_found -> install, libraries)
@@ -1357,7 +1345,7 @@ let setup_toolchain () =
         else
           ':', false
       in
-      let libraries = nsplit libraries separator in
+      let libraries = String.split_on_char separator libraries in
       if run_through_cygpath then
         Option.value ~default:libraries (cygpath libraries Option.some)
       else
