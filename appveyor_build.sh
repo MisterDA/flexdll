@@ -100,7 +100,7 @@ FLEXDLL_BOOTSTRAP_WORKS=1
 
 case $OCAML_RELEASE in
   311|312|400|401|402|403|404)
-    MAKEOCAML="make -f Makefile.nt"
+    MAKEOCAML="make -f nt.mk"
     HEADER_DIR=config;;
   405)
     HEADER_DIR=config;;
@@ -118,7 +118,7 @@ case $OCAML_RELEASE in
 esac
 
 if [ $OCAML_RELEASE -eq 403 ] ; then
-  sed -i -e "s/:=.*/:=/" config/Makefile.msvc64
+  sed -i -e "s/:=.*/:=/" config/msvc64.mk
 fi
 
 if [ ! -f $OCAMLROOT/STAMP ] || [ "$(git rev-parse HEAD)" != "$(cat $OCAMLROOT/STAMP)" ] || [ "$(sed -ne 's/ *SYSTEM *= *//p' "$(ocamlc -where | tr -d '\r')/Makefile.config" | tr -d '\r')" != "$OCAML_SYSTEM" ] ; then
@@ -154,13 +154,13 @@ if [ ! -f $OCAMLROOT/STAMP ] || [ "$(git rev-parse HEAD)" != "$(cat $OCAMLROOT/S
         sed -i -e 's/def _WIN32/ndef _UCRT/' byterun/caml/misc.h
       fi
       # MPR#6319
-      sed -i -e '/chmod -w/d' Makefile.nt
+      sed -i -e '/chmod -w/d' nt.mk
       # Unavailable configuration
       sed -i -e '/^opt.opt:/,+1s/ocamlbuild.native\|camlp4opt\|ocamldoc.opt//g' \
              -e '/[^(]cd ocamldoc/d' \
              -e '/partial-install/d' \
              -e '/^opt:/s/other.*//' \
-             -e '/^all:/,+1s/ocamldoc.byte\|ocamlbuild.byte\|camlp4out//g' Makefile.nt
+             -e '/^all:/,+1s/ocamldoc.byte\|ocamlbuild.byte\|camlp4out//g' nt.mk
       run "make world.opt" $MAKEOCAML world opt opt.opt
       cp /cygdrive/c/flexdll/flexlink.exe $OCAMLROOT/bin/
     else

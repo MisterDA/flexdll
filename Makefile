@@ -55,11 +55,11 @@ MSVC_DETECT=1
 
 ifeq ($(MSVC_DETECT),1)
 ifeq ($(if $(MAKECMDGOALS),$(if $(strip $(filter-out clean,$(MAKECMDGOALS))),,1)),)
-include Makefile.winsdk
+include winsdk.mk
 endif
 endif
 
-Makefile.winsdk: msvs-detect
+winsdk.mk: msvs-detect
 	bash ./msvs-detect --output=make > $@
 
 MSVC_FLAGS = /nologo /MD -D_CRT_SECURE_NO_DEPRECATE /GS- /W3
@@ -256,7 +256,7 @@ demo_msvc64:  flexlink.exe flexdll_msvc64.obj flexdll_initer_msvc64.obj
 	$(MSVC64_PREFIX) $(MAKE) -C test clean demo CHAIN=msvc64 CC="$(MSVCC64)" CFLAGS="$(MSVC_FLAGS)" PLUG2_CFLAGS="/bigobj" O=obj
 
 distclean: clean
-	rm -f Makefile.winsdk
+	rm -f winsdk.mk
 
 clean:
 	rm -f *.obj *.o *.lib *.a *.exe *.opt *.cmx *.dll *.exp *.cmi *.cmo *~ version.res version.ml COMPILER-* Compat.ml
