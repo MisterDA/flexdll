@@ -24,7 +24,15 @@ let debug ?(dry_mode = {contents=false}) min_level fmt =
 let search_path = ref []
 let default_libs = ref []
 
-let gcc = ref "gcc"
+let cc = function
+  | `MSVC -> Build_config.msvc
+  | `MSVC64 -> Build_config.msvc64
+  | `CYGWIN64 -> Build_config.cygwin64
+  | `MINGW -> Build_config.mingw
+  | `MINGW64 -> Build_config.mingw64
+  | `GNAT | `GNAT64 -> Build_config.gnat
+  | _ -> failwith "No C compiler configured for this toolchain."
+
 let objdump = ref "objdump"
 
 let is_crt_lib = function
@@ -204,7 +212,7 @@ let run_command cmd =
   in
   (* note: for Cygwin, using bash allow to follow symlinks to find
      gcc... *)
-  if !toolchain = `CYGWIN64 ||
+  if Sys.unix || !toolchain = `CYGWIN64 ||
      String.length cmd + String.length silencer > max_command_length
   then begin
     (* Dump the command in a text file and apply bash to it. *)
@@ -235,7 +243,7 @@ let quote_files lst =
   let s =
     String.concat " "
       (List.map (fun f -> if f = "" then f else Filename.quote f) lst) in
-  if String.length s >= 1024 then Filename.quote (build_diversion lst)
+  if not Sys.unix && String.length s >= 1024 then Filename.quote (build_diversion lst)
   else s
 
 
@@ -244,7 +252,17 @@ let quote_files lst =
 let cygpath l cont =
   let accept_error = (!use_cygpath = `Try && l <> []) in
   let l =
-    let args = String.concat " " (List.map Filename.quote l) in
+    let s = "-- " ^ String.concat " " (List.map Filename.quote l) in
+    let args =
+      if not Sys.cygwin && String.length s >= 1024 then begin
+        (* cygpath loads the file in "text" mode, so CRLF endings are fine *)
+        let (fn, oc) = open_temp_file "cygpathargs" "" in
+        List.iter (fun x -> output_string oc x; output_char oc '\n') l;
+        close_out oc;
+        "--file " ^ Filename.quote fn
+      end else
+        s
+    in
     get_output ~accept_error "cygpath -m %s" args
   in
   if accept_error && l = [] then begin
@@ -307,7 +325,7 @@ let rec map_until_found f = function
       | r ->
           r
 
-let find_file =
+let find_file_exn =
   let memo = Hashtbl.create 16 in
   fun fn ->
     let k = String.lowercase_ascii fn in
@@ -329,16 +347,18 @@ let find_file =
             else
               ["lib" ^ base], standard_suffixes
           else [fn], standard_suffixes in
-        let r =
-          match map_until_found (find_file suffixes) fns with
-          | Some fn -> fn
-          | None ->
-              failwith (Printf.sprintf "Cannot find file %S" fn)
-        in
-        Hashtbl.add memo k r;
-        Hashtbl.add memo (k ^ ".lib") r;
-        r
+        match map_until_found (find_file suffixes) fns with
+        | Some fn ->
+            Hashtbl.add memo k fn;
+            Hashtbl.add memo (k ^ ".lib") fn;
+            fn
+        | None ->
+            raise Not_found
 
+let find_file fn =
+  try find_file_exn fn
+  with Not_found ->
+    failwith (Printf.sprintf "Cannot find file %S" fn)
 
 (*******************************)
 
@@ -1088,6 +1108,8 @@ let build_dll link_exe output_file files exts extra_args =
 
   let cmd = match !toolchain with
     | `MSVC | `MSVC64 ->
+        let link = Option.value !Cmdline.use_linker ~default:"link" in
+
         (* Putting the file the descriptor object at the beginning
            with MSVC compilers seems to break Stack overflow recovery
            in OCaml. No idea why. *)
@@ -1114,7 +1136,10 @@ let build_dll link_exe output_file files exts extra_args =
         let extra_args =
           (* FlexDLL doesn't process .voltbl sections correctly, so don't allow the linker
              to process them. *)
-          if Sys.command "link | findstr EMITVOLATILEMETADATA > nul" = 0 then
+          let command =
+            if Sys.win32 then link ^ " /nologo /? | findstr EMITVOLATILEMETADATA > NUL"
+            else link ^ " /nologo '/?' | grep -iq emitvolatilemetadata >/dev/null" in
+          if Sys.command command = 0 then
             "/EMITVOLATILEMETADATA:NO " ^ extra_args
           else extra_args
         in
@@ -1126,7 +1151,8 @@ let build_dll link_exe output_file files exts extra_args =
            with the Windows 7 SDK in 64-bit mode. *)
 
         Printf.sprintf
-          "link /nologo %s%s%s%s%s /implib:%s /out:%s /subsystem:%s %s %s %s"
+          "%s /nologo %s%s%s%s%s /implib:%s /out:%s /subsystem:%s %s %s %s"
+          link
           (if !verbose >= 2 then "/verbose " else "")
           (if link_exe = `EXE then "" else "/dll ")
           (if main_pgm then "" else "/export:symtbl /export:reloctbl ")
@@ -1154,8 +1180,9 @@ let build_dll link_exe output_file files exts extra_args =
             Filename.quote def_file
         in
         Printf.sprintf
-          "%s %s%s -L. %s %s -o %s %s %s %s %s"
-          !gcc
+          "%s %s%s%s -L. %s %s -o %s %s %s %s %s"
+          (cc !toolchain)
+          (Option.fold ~none:"" ~some:(fun ld -> "-fuse-ld=" ^ ld ^ " ") !Cmdline.use_linker)
           (if link_exe = `EXE then "" else "-shared ")
           (if main_pgm then "" else if !noentry then "-Wl,-e0 " else if !machine = `x86 then "-Wl,-e_FlexDLLiniter@12 " else "-Wl,-eFlexDLLiniter ")
           (mk_dirs_opt "-I")
@@ -1175,9 +1202,10 @@ let build_dll link_exe output_file files exts extra_args =
             Filename.quote def_file
         in
         Printf.sprintf
-          "%s -m%s %s%s -L. %s %s -o %s %s %s %s %s %s"
-          !gcc
+          "%s -m%s %s%s%s -L. %s %s -o %s %s %s %s %s %s"
+          (cc !toolchain)
           !subsystem
+          (Option.fold ~none:"" ~some:(fun ld -> "-fuse-ld=" ^ ld ^ " ") !Cmdline.use_linker)
           (if link_exe = `EXE then "" else "-shared ")
           (if main_pgm then "" else if !noentry then "-Wl,-e0 " else if !machine = `x86 then "-Wl,-e_FlexDLLiniter@12 " else "-Wl,-eFlexDLLiniter ")
           (mk_dirs_opt "-I")
@@ -1190,8 +1218,10 @@ let build_dll link_exe output_file files exts extra_args =
           extra_args
     | `LIGHTLD ->
         no_merge_manifest := true;
+        let ld = Option.value !Cmdline.use_linker ~default:"ld" in
         Printf.sprintf
-          "ld %s%s -o %s %s %s %s %s"
+          "%s %s%s -o %s %s %s %s %s"
+          ld
           (if link_exe = `EXE then "" else "--shared ")
           (if main_pgm then "" else if !noentry then "-e0 " else "-e FlexDLLiniter@12 ")
           (Filename.quote output_file)
@@ -1219,7 +1249,9 @@ let build_dll link_exe output_file files exts extra_args =
           Filename.concat flexdir default_manifest
       in
       let mcmd =
-        Printf.sprintf "mt -nologo -outputresource:%s -manifest %s"
+        let mt = Option.value !Cmdline.use_mt ~default:"mt" in
+        Printf.sprintf "%s -nologo -outputresource:%s -manifest %s"
+          mt
           (Filename.quote (if link_exe = `EXE then output_file
                            else output_file ^ ";#2"))
           (Filename.quote fn)
@@ -1314,13 +1346,17 @@ let remove_duplicate_paths paths =
 
 let setup_toolchain () =
   let mingw_libs pre =
-    gcc := pre ^ "gcc";
     objdump := pre ^ "objdump";
     let rec get_lib_search_dirs install libraries input =
       match input with
       | entry :: input ->
           if String.length entry > 9 && String.sub entry 0 9 = "install: " then
-            get_lib_search_dirs (String.sub entry 9 (String.length entry - 9)) libraries input
+            let install = String.sub entry 9 (String.length entry - 9) in
+            (* Ensure install does not end with a separator (or
+               [Sys.is_directory] will fail) *)
+            let install = Filename.concat install Filename.current_dir_name
+                          |> Filename.dirname in
+            get_lib_search_dirs (Some install) libraries input
           else begin try
             match split entry '=' with
             | "libraries: ", paths -> get_lib_search_dirs install paths input
@@ -1329,18 +1365,9 @@ let setup_toolchain () =
             get_lib_search_dirs install libraries input
           end
       | [] ->
-          let install =
-            if install <> "" then
-              (* Ensure install does not end with a separator (or
-                 Sys.is_directory will fail) *)
-              Filename.concat install Filename.current_dir_name
-              |> Filename.dirname
-            else
-              ""
-          in
           let separator, run_through_cygpath =
             if Sys.win32 then
-              if dir_exists_no_cygpath install then
+              if install = None (* clang *) || dir_exists_no_cygpath (Option.get install) then
                 ';', false
               else
                 ':', (!use_cygpath <> `No)
@@ -1354,19 +1381,30 @@ let setup_toolchain () =
             libraries
     in
     let lib_search_dirs =
-      get_lib_search_dirs "" "" (get_output "%s -print-search-dirs" !gcc)
+      get_lib_search_dirs None "" (get_output "%s -print-search-dirs" (cc !toolchain))
+      |> List.filter (( <> ) "")
       |> List.map normalize_path
       |> remove_duplicate_paths
     in
     search_path := !dirs @ lib_search_dirs;
     if !verbose >= 1 then begin
-      print_endline "lib search dirs:";
+      Printf.printf "lib search dirs (%s):" (cc !toolchain);
       List.iter (Printf.printf "  %s\n") lib_search_dirs;
       flush stdout
     end;
     default_libs :=
-      ["-lmingw32"; "-lgcc"; "-lgcc_eh"; "-lmoldname"; "-lmingwex"; "-lmsvcrt";
-       "-luser32"; "-lkernel32"; "-ladvapi32"; "-lshell32" ];
+      [ "-lmoldname"; "-lmingwex"; "-lmsvcrt"; "-luser32"; "-lkernel32";
+        "-ladvapi32"; "-lshell32" ];
+    (* -lgcc_eh isn't guaranteed to be available (e.g. if using a static
+       compiler - cf. ocaml/ocaml#12996. Parsing GCC's specs is a bit too much
+       work, so instead treat -lgcc_eh as optional *)
+    let () =
+      try
+        let _ = find_file_exn "-lgcc_eh" in
+        default_libs := "-lgcc_eh" :: !default_libs
+      with Not_found -> ()
+    in
+    default_libs := "-lmingw32" :: "-lgcc" :: !default_libs;
     if !exe_mode = `EXE then default_libs := "crt2.o" :: !default_libs
     else default_libs := "dllcrt2.o" :: !default_libs
   in
@@ -1376,14 +1414,13 @@ let setup_toolchain () =
       add_flexdll_obj := false;
       noentry := true
   | `CYGWIN64 ->
-      gcc := "gcc";
       objdump := "objdump";
       search_path :=
         !dirs @
           [
            "/lib";
            "/lib/w32api";
-           Filename.dirname (get_output1 ~use_bash:true "gcc -print-libgcc-file-name");
+           Filename.dirname (get_output1 ~use_bash:true "%s -print-libgcc-file-name" (cc !toolchain));
           ];
       default_libs := ["-lkernel32"; "-luser32"; "-ladvapi32";
                        "-lshell32"; "-lcygwin"; "-lgcc_s"; "-lgcc"]
@@ -1393,16 +1430,16 @@ let setup_toolchain () =
       if not !custom_crt then
         default_libs := ["msvcrt.lib"]
   | `MINGW ->
-      mingw_libs Version.mingw_prefix
+      mingw_libs Build_config.mingw_prefix
   | `MINGW64 ->
-      mingw_libs Version.mingw64_prefix
+     mingw_libs Build_config.mingw64_prefix
   | `GNAT | `GNAT64 ->
    (* This is a plain copy of the mingw version, but we do not change the
       prefix and use "gnatls" to compute the include dir. *)
     search_path :=
       !dirs @
       [
-       Filename.dirname (get_output1 "%s -print-libgcc-file-name" !gcc);
+       Filename.dirname (get_output1 "%s -print-libgcc-file-name" (cc !toolchain));
        read_gnatls ();
       ];
     default_libs :=
@@ -1441,21 +1478,23 @@ let compile_if_needed file =
     let cmd = match !toolchain with
       | `MSVC | `MSVC64 ->
           Printf.sprintf
-            "cl /c /MD /nologo /Fo%s %s %s%s"
+            "%s /c /MD /nologo /Fo%s %s %s%s"
+            (cc !toolchain)
             (Filename.quote tmp_obj)
             (mk_dirs_opt "/I")
             file
             pipe
       | `CYGWIN64 ->
           Printf.sprintf
-            "gcc -c -o %s %s %s"
+            "%s -c -o %s %s %s"
+            (cc !toolchain)
             (Filename.quote tmp_obj)
             (mk_dirs_opt "-I")
             file
       | `MINGW | `MINGW64 | `GNAT | `GNAT64 ->
           Printf.sprintf
             "%s -c -o %s %s %s"
-            !gcc
+            (cc !toolchain)
             (Filename.quote tmp_obj)
             (mk_dirs_opt "-I")
             (Filename.quote file)
