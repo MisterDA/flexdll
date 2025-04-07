@@ -16,6 +16,17 @@ Next version
   Fix FlexDLL cross-build on macOS and BSD.
   (Antonin Décimo, review by Nicolás Ojeda Bär)
 - GPR#151: Use response files with all toolchains (Puneeth Chaganti, review by David Allsopp and Antonin Décimo)
+- GPR#152: Use a file to pass arguments to cygpath (Puneeth Chaganti, review by David Allsopp and Antonin Décimo)
+- GPR#156: Allow choosing an alternative linker and manifest tool at runtime
+  with -use-linker=<cmd> and -use-mt=<cmd>.
+  (Antonin Décimo, review by David Allsopp)
+- GPR#133, GPR#147: Allow default libraries to be marked as optional (David Allsopp, report by Romain Beauxis)
+- GPR#157: Improve flexlink support on Unix (for cross-compiling contexts).
+  (Antonin Décimo, review by David Allsopp)
+- GPR#158: Reuse the compilers used during the build for later operations, such
+  as querying the compilers for their library search paths. Support parsing
+  clang output.
+  (Antonin Décimo, review by ???)
 
 Version 0.43
 - GPR#108: Add -lgcc_s to Cygwin's link libraries, upstreaming a patch from the

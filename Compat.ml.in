@@ -101,6 +101,8 @@
 408:module Option = struct
 408:  let some v = Some v
 408:  let value o ~default = match o with Some v -> v | None -> default
+408:  let fold ~none ~some = function Some v -> some v | None -> none
+408:  let get = function Some v -> v | None -> invalid_arg "option is None"
 408:end
 
 407:module Stdlib = Pervasives
@@ -136,6 +138,8 @@
 401:  include Sys
 401:
 401:  let win32 = (Sys.os_type = "Win32")
+401:  let cygwin = (Sys.os_type = "Cygwin")
+401:  let unix = (Sys.os_type = "Unix")
 401:end
 
 402:type bytes = string
