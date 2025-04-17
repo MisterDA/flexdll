@@ -1117,8 +1117,14 @@ let build_dll link_exe output_file files exts extra_args =
         let c = open_out implib in output_string c "x"; close_out c;
         let _impexp = add_temp (Filename.chop_suffix implib ".lib" ^ ".exp") in
         let extra_args =
+          (* SafeSEH without a C runtime library requires the user to
+             supply a load config struct.
+             See VC/Tools/MSVC/.../crt/src/vcruntime/loadcfg.c. *)
           if !custom_crt then "/nodefaultlib:LIBCMT /nodefaultlib:MSVCRT " ^ extra_args
-          else "msvcrt.lib " ^ extra_args
+          else
+            "msvcrt.lib "
+            ^ (if !machine = `x86 then "/safeseh " else "")
+            ^ extra_args)
         in
 
         let extra_args =
