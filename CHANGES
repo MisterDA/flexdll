@@ -2,6 +2,8 @@ Next version
 - GPR#164: Recognize `-mwindows` and `-mconsole` for greater compatibility (with
   `pkg-config` in particular).
   (Nicolás Ojeda Bär, review by David Allsopp)
+- GRP#169: Drop the .llvm_addrsig section from rewritten objects.
+  (Antonin Décimo, review by David Allsopp)
 
 Version 0.44
 - GPR#127: Recognise hyphens in option names in the COFF .drectve section.

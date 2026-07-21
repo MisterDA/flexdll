@@ -926,6 +926,23 @@ let build_dll link_exe output_file files exts extra_args =
 
   List.iter (fun s -> exported := StrSet.add (usym s) !exported) !defexports;
 
+  (* Drop the .llvm_addrsig section (an optional hint for the linker's
+     identical-code-folding pass, emitted by clang) from rewritten objects:
+     its payload consists of symbol table indices which become stale when
+     the symbol table is rewritten, and lld-link rejects objects with an
+     invalid address-significance table. *)
+  let drop_addrsig obj =
+    let addrsig s = s.sec_name = ".llvm_addrsig" in
+    obj.sections <- List.filter (fun s -> not (addrsig s)) obj.sections;
+    obj.symbols <-
+      List.filter
+        (fun s ->
+           match s.section with
+           | `Section sec -> not (addrsig sec)
+           | `Num _ -> true)
+        obj.symbols
+  in
+
   let record_obj obj =
     if !builtin_linker then ""
     else begin
@@ -959,6 +976,7 @@ let build_dll link_exe output_file files exts extra_args =
   let close_obj name imps obj =
     error_imports name imps;
     add_reloc name obj imps;
+    drop_addrsig obj;
     record_obj obj
   in
 
