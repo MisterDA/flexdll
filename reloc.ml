@@ -1363,8 +1363,7 @@ let remove_duplicate_paths paths =
   loop paths
 
 let setup_toolchain () =
-  let mingw_libs pre =
-    objdump := pre ^ "objdump";
+  let cc_lib_search_dirs () =
     let rec get_lib_search_dirs install libraries input =
       match input with
       | entry :: input ->
@@ -1404,12 +1403,16 @@ let setup_toolchain () =
       |> List.map normalize_path
       |> remove_duplicate_paths
     in
-    search_path := !dirs @ lib_search_dirs;
     if !verbose >= 1 then begin
       Printf.printf "lib search dirs (%s):\n" (cc !toolchain);
       List.iter (Printf.printf "  %s\n") lib_search_dirs;
       flush stdout
     end;
+    lib_search_dirs
+  in
+  let mingw_libs pre =
+    objdump := pre ^ "objdump";
+    search_path := !dirs @ cc_lib_search_dirs ();
     default_libs :=
       [ "-lmoldname"; "-lmingwex"; "-lmsvcrt"; "-luser32"; "-lkernel32";
         "-ladvapi32"; "-lshell32" ];
