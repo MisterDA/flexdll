@@ -63,6 +63,10 @@ MSVC: the 32-bit C compiler from Microsoft.
 
 MSVC64: the 64-bit C compiler from Microsoft.
 
+CLANG64: a 64-bit C compiler with a Unix-style command line targeting the
+MSVC ABI and runtime (e.g. `clang --target=x86_64-pc-windows-msvc` or
+`zig cc -target x86_64-windows-msvc`), driving an lld-link-style linker.
+
 CYGWIN64: the 64-bit gcc compiler shipped with Cygwin.
 
 MINGW: the 32-bit gcc compiler from the MinGW-w64 project, packaged in

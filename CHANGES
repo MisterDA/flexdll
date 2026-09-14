@@ -4,6 +4,12 @@ Next version
   (Nicolás Ojeda Bär, review by David Allsopp)
 - GRP#169: Drop the .llvm_addrsig section from rewritten objects.
   (Antonin Décimo, review by David Allsopp)
+- New `clang64` chain for C compilers with a Unix-style command line targeting
+  the MSVC ABI and runtime, such as `clang --target=x86_64-pc-windows-msvc` and
+  `zig cc -target x86_64-windows-msvc`. The linker (lld-link by default,
+  configurable with `-use-linker`) is driven through the C compiler;
+  `-Wl,/option`-style arguments are now recognized and forwarded.
+  (Antonin Décimo)
 
 Version 0.44
 - GPR#127: Recognise hyphens in option names in the COFF .drectve section.

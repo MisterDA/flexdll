@@ -27,6 +27,7 @@ let default_libs = ref []
 let cc = function
   | `MSVC -> Version.msvc
   | `MSVC64 -> Version.msvc64
+  | `CLANG64 -> Version.clang64
   | `CYGWIN64 -> Version.cygwin64
   | `MINGW -> Version.mingw
   | `MINGW64 -> Version.mingw64
@@ -193,7 +194,7 @@ let build_diversion lst =
   in
   let lst =
     match !toolchain with
-    | `MINGW | `MINGW64 | `GNAT | `GNAT64 | `CYGWIN64 -> lst
+    | `MINGW | `MINGW64 | `GNAT | `GNAT64 | `CYGWIN64 | `CLANG64 -> lst
     | `MSVC | `MSVC64 | `LIGHTLD ->
       (* UTF-16 response files required *)
       try
@@ -342,7 +343,8 @@ let find_file_exn =
             let base = String.sub fn 2 (String.length fn - 2) in
             if String.length base > 0 && base.[0] = ':' then
               [String.sub base 1 (String.length base - 1)], []
-            else if !toolchain = `MSVC || !toolchain = `MSVC64 then
+            else if !toolchain = `MSVC || !toolchain = `MSVC64
+                    || !toolchain = `CLANG64 then
               ["lib" ^ base; base], standard_suffixes
             else
               ["lib" ^ base], standard_suffixes
@@ -631,7 +633,7 @@ let collect_dllexports obj =
       (List.find_all (fun (cmd,_args) -> String.uppercase_ascii cmd = "EXPORT") dirs)
   in
   match !toolchain with
-  | `MSVC | `MSVC64 -> List.map (drop_underscore obj) l
+  | `MSVC | `MSVC64 | `CLANG64 -> List.map (drop_underscore obj) l
   | _ -> l
 
 let collect f l =
@@ -665,7 +667,7 @@ let parse_dll_exports fn =
 let dll_exports fn = match !toolchain with
   | `MSVC | `MSVC64 | `LIGHTLD ->
       failwith "Creation of import library not supported for this toolchain"
-  | `GNAT | `GNAT64 | `CYGWIN64 | `MINGW | `MINGW64 ->
+  | `GNAT | `GNAT64 | `CYGWIN64 | `MINGW | `MINGW64 | `CLANG64 ->
       let dmp = temp_file "dyndll" ".dmp" in
       if cmd_verbose (Printf.sprintf "%s -p %s > %s" !objdump fn dmp) <> 0
       then failwith "Error while extracting exports from a DLL";
@@ -1188,6 +1190,51 @@ let build_dll link_exe output_file files exts extra_args =
           !subsystem
           files descr
           extra_args
+    | `CLANG64 ->
+        (* A Unix-CLI compiler driving an lld-link-style linker: linker options
+           keep the MSVC spelling and are passed with -Wl,. The driver is
+           responsible for the CRT libraries and for translating -L into
+           /libpath:. *)
+        let gnu_cli_linker = false in
+        begin match gnu_cli_linker with
+        | false ->
+            let implib =
+              if !implib then
+                Filename.chop_extension output_file ^ ".lib"
+              else
+                temp_file "dyndll_implib" ".lib"
+            in
+            let _impexp =
+              add_temp (Filename.chop_suffix implib ".lib" ^ ".exp") in
+            let extra_args =
+              if !custom_crt then
+                "-Wl,/nodefaultlib:LIBCMT -Wl,/nodefaultlib:MSVCRT "
+                ^ extra_args
+              else extra_args
+            in
+            (* See the MSVC chain for the purpose of /base (the comment below)
+               and for why the descriptor object is placed after the files. *)
+            Printf.sprintf
+              "%s -fuse-ld=%s %s%s%s-Wl,/implib:%s -Wl,/base:%s -Wl,/subsystem:%s -L. %s -o %s %s %s %s"
+              (cc !toolchain)
+              (* The default linker of MSVC-target compiler drivers is link.exe,
+                 which is unlikely to be available (e.g. when cross-compiling) *)
+              (Option.value !Cmdline.use_linker ~default:"lld")
+              (if link_exe = `EXE then "" else "-shared ")
+              (if main_pgm then ""
+               else "-Wl,/export:symtbl -Wl,/export:reloctbl ")
+              (if main_pgm then "" else if !noentry then "-Wl,/noentry "
+               else "-Wl,/entry:FlexDLLiniter ")
+              (Filename.quote implib)
+              !base_addr
+              !subsystem
+              (mk_dirs_opt "-L")
+              (Filename.quote output_file)
+              files
+              descr
+              extra_args
+        | true -> assert false
+        end
     | `CYGWIN64 ->
         let def_file =
           if main_pgm then ""
@@ -1450,6 +1497,18 @@ let setup_toolchain () =
         parse_libpath (try Sys.getenv "LIB" with Not_found -> "");
       if not !custom_crt then
         default_libs := ["msvcrt.lib"]
+  | `CLANG64 ->
+      (* The WinSDK/MSVC library directories come either from the LIB
+         environment variable (as with the MSVC chains) or from the compiler
+         itself when it knows them (-winsysroot, -vctoolsdir, ... passed as part
+         of the compiler command). *)
+      objdump := "llvm-objdump";
+      search_path :=
+        !dirs
+        @ parse_libpath (try Sys.getenv "LIB" with Not_found -> "")
+        @ cc_lib_search_dirs ();
+      if not !custom_crt then
+        default_libs := ["msvcrt.lib"]
   | `MINGW ->
       mingw_libs Version.mingw_prefix
   | `MINGW64 ->
@@ -1519,6 +1578,14 @@ let compile_if_needed file =
             (Filename.quote tmp_obj)
             (mk_dirs_opt "-I")
             (Filename.quote file)
+      | `CLANG64 ->
+          (* -fms-runtime-lib=dll matches the /MD of the MSVC chains *)
+          Printf.sprintf
+            "%s -c -fms-runtime-lib=dll -o %s %s %s"
+            (cc !toolchain)
+            (Filename.quote tmp_obj)
+            (mk_dirs_opt "-I")
+            (Filename.quote file)
       | `LIGHTLD ->
           failwith "Compilation of C code is not supported for this toolchain"
     in
@@ -1560,6 +1627,7 @@ let all_files () =
   let tc = match !toolchain with
   | `MSVC -> "msvc.obj"
   | `MSVC64 -> "msvc64.obj"
+  | `CLANG64 -> "clang64.o"
   | `CYGWIN64 -> "cygwin64.o"
   | `MINGW64 -> "mingw64.o"
   | `GNAT -> "gnat.o"
