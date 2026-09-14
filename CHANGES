@@ -6,9 +6,13 @@ Next version
   (Antonin Décimo, review by David Allsopp)
 - New `clang64` chain for C compilers with a Unix-style command line targeting
   the MSVC ABI and runtime, such as `clang --target=x86_64-pc-windows-msvc` and
-  `zig cc -target x86_64-windows-msvc`. The linker (lld-link by default,
-  configurable with `-use-linker`) is driven through the C compiler;
-  `-Wl,/option`-style arguments are now recognized and forwarded.
+  `zig cc -target x86_64-windows-msvc`. By default the link is driven through
+  the C compiler with an lld-link-style linker (lld), and `-Wl,/option`-style
+  arguments are now recognized and forwarded. A linker with a GNU-style command
+  line given with `-use-linker` (e.g. `-use-linker "ld.lld -m i386pep"`) is
+  instead invoked directly with GNU option spellings. Note that GNU binutils ld
+  is currently unable to link the MSVC CRT (it selects the wrong members from
+  msvcrt.lib).
   (Antonin Décimo)
 
 Version 0.44
